@@ -8,4 +8,16 @@
     <color name="colorPrimary">#3F51B5</color>
     <color name="colorPrimaryDark">#303F9F</color>
     <color name="colorAccent">#FF4081</color>
+
+    <color name="seed_color">#6730D2</color>  <color name="light_primary">@color/seed_color</color>
+    <color name="light_secondary">#A0522D</color>  <color name="light_onPrimary">@color/white</color>  <color name="light_onSecondary">@color/white</color>  <color name="light_surface">#FFFFFF</color>   <color name="light_onSurface">#000000</color> <color name="dark_primary">@color/seed_color</color>
+    <color name="dark_secondary">#D2A052</color>  <color name="dark_onPrimary">@color/black</color> <color name="dark_onSecondary">@color/black</color> <color name="dark_surface">#121212</color>  <color name="dark_onSurface">@color/white</color> <color name="button_default_color">
+    <item name="android:color">@color/material_dynamic_primary_variant</item>
+    <item name="default">@color/light_primary</item>  <item name="night">@color/dark_primary</item>    </color>
+    <color name="button_pressed_color">
+        <item name="android:color">@color/material_dynamic_primary_variant</item>
+        <item name="default">@color/light_secondary</item>  <item name="night">@color/dark_secondary</item>    </color>
+
+    <color name="button_focused_color">@color/button_default_color</color>
+    <color name="button_disabled_color">#CCCCCC</color>
 </resources>
