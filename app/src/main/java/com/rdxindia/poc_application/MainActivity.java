@@ -29,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 1;
     private SpeechRecognizer speechRecognizer;
     private Intent recognizerIntent;
-    private final String keyword = "harekrishna";
+    private final String keyword = "Hare Krishna";
 
     // UI Components
     private ImageView micIcon;
@@ -75,9 +75,11 @@ public class MainActivity extends AppCompatActivity {
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
             recognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US"); // Force English
+            recognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3); // Get multiple possible matches
             recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            recognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+            recognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true); // Enable partial results
 
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
                 @Override
@@ -109,18 +111,26 @@ public class MainActivity extends AppCompatActivity {
                     });
                 }
 
+
                 @Override
                 public void onResults(Bundle results) {
                     ArrayList<String> matches = results.getStringArrayList(
                             SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null) {
                         for (String phrase : matches) {
-                            if (phrase.toLowerCase().contains(keyword)) {
-                                showConfirmationDialog();
+                            String cleanedPhrase = phrase.toLowerCase().trim();
+                            // Check for exact match or common variations
+                            if (cleanedPhrase.equals(keyword) ||
+                                    cleanedPhrase.equals("Hare Krishna") ||
+                                    cleanedPhrase.startsWith("hare ")) {
                                 runOnUiThread(() -> {
+                                    Toast.makeText(MainActivity.this,
+                                            "Success! Detected: " + cleanedPhrase,
+                                            Toast.LENGTH_LONG).show();
+                                    // Update UI
                                     micIcon.setColorFilter(ContextCompat.getColor(
                                             MainActivity.this, R.color.active_color));
-                                    statusText.setText("Keyword detected!");
+                                    statusText.setText("Detected: " + cleanedPhrase);
                                 });
                                 break;
                             }
@@ -128,9 +138,44 @@ public class MainActivity extends AppCompatActivity {
                     }
                     startListening();
                 }
+//                @Override
+//                public void onResults(Bundle results) {
+//                    ArrayList<String> matches = results.getStringArrayList(
+//                            SpeechRecognizer.RESULTS_RECOGNITION);
+//                    if (matches != null && !matches.isEmpty()) {
+//                        String heardText = matches.get(0).toLowerCase().trim();
+//                        Toast.makeText(MainActivity.this,
+//                                "Heard: " + heardText, Toast.LENGTH_SHORT).show();
+//
+//                        if (heardText.equals(keyword)) {
+//                            runOnUiThread(() -> {
+//                                Toast.makeText(MainActivity.this,
+//                                        "Keyword Detected!", Toast.LENGTH_LONG).show();
+//                                micIcon.setColorFilter(ContextCompat.getColor(
+//                                        MainActivity.this, R.color.active_color));
+//                                statusText.setText("Keyword detected!");
+//                                showConfirmationDialog();
+//                            });
+//                        }
+//                    }
+//                    startListening();
+//                }
 
                 @Override
-                public void onPartialResults(Bundle partialResults) {}
+                public void onPartialResults(Bundle partialResults) {
+                    // This will give real-time feedback
+                    ArrayList<String> partialMatches = partialResults.getStringArrayList(
+                            SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (partialMatches != null && !partialMatches.isEmpty()) {
+                        String partialText = partialMatches.get(0).toLowerCase().trim();
+                        if (partialText.equals(keyword)) {
+                            runOnUiThread(() -> {
+                                Toast.makeText(MainActivity.this,
+                                        "Detecting keyword...", Toast.LENGTH_SHORT).show();
+                            });
+                        }
+                    }
+                }
 
                 @Override
                 public void onEvent(int eventType, Bundle params) {}
