@@ -29,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 1;
     private SpeechRecognizer speechRecognizer;
     private Intent recognizerIntent;
-    private final String keyword = "Hare Krishna";
+    private final String keyword = "Take a photo"; //Hare Krishna
 
     // UI Components
     private ImageView micIcon;
@@ -71,23 +71,25 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // Inside initializeSpeechRecognizer()
     private void initializeSpeechRecognizer() {
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
             recognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US"); // Force English
-            recognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3); // Get multiple possible matches
+            recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US");
+            recognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
             recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            recognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true); // Enable partial results
+            recognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+
+            // Enable offline recognition
+            recognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
 
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
                 @Override
                 public void onReadyForSpeech(Bundle params) {
-                    runOnUiThread(() -> {
-                        micIcon.setColorFilter(ContextCompat.getColor(MainActivity.this, R.color.listening_color));
-                        statusText.setText("Listening...");
-                    });
+                    micIcon.setColorFilter(ContextCompat.getColor(MainActivity.this, R.color.listening_color));
+                    statusText.setText("Listening...");
                 }
 
                 @Override
@@ -104,75 +106,37 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onError(int error) {
-                    runOnUiThread(() -> {
-                        micIcon.setColorFilter(ContextCompat.getColor(MainActivity.this, R.color.error_color));
-                        statusText.setText("Error - tap to restart");
-                        restartButton.setVisibility(View.VISIBLE);
-                    });
+                    micIcon.setColorFilter(ContextCompat.getColor(MainActivity.this, R.color.error_color));
+                    statusText.setText("Error - tap to restart");
+                    restartButton.setVisibility(View.VISIBLE);
                 }
-
 
                 @Override
                 public void onResults(Bundle results) {
-                    ArrayList<String> matches = results.getStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION);
+                    ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null) {
                         for (String phrase : matches) {
                             String cleanedPhrase = phrase.toLowerCase().trim();
-                            // Check for exact match or common variations
-                            if (cleanedPhrase.equals(keyword) ||
-                                    cleanedPhrase.equals("Hare Krishna") ||
-                                    cleanedPhrase.startsWith("hare ")) {
-                                runOnUiThread(() -> {
-                                    Toast.makeText(MainActivity.this,
-                                            "Success! Detected: " + cleanedPhrase,
-                                            Toast.LENGTH_LONG).show();
-                                    // Update UI
-                                    micIcon.setColorFilter(ContextCompat.getColor(
-                                            MainActivity.this, R.color.active_color));
-                                    statusText.setText("Detected: " + cleanedPhrase);
-                                });
+                            if (cleanedPhrase.equals(keyword.toLowerCase()) ||
+                                    cleanedPhrase.startsWith("take") ||
+                                    cleanedPhrase.startsWith("photo")) {
+                                Toast.makeText(MainActivity.this, "Detected: " + cleanedPhrase, Toast.LENGTH_LONG).show();
+                                micIcon.setColorFilter(ContextCompat.getColor(MainActivity.this, R.color.active_color));
+                                statusText.setText("Detected: " + cleanedPhrase);
                                 break;
                             }
                         }
                     }
                     startListening();
                 }
-//                @Override
-//                public void onResults(Bundle results) {
-//                    ArrayList<String> matches = results.getStringArrayList(
-//                            SpeechRecognizer.RESULTS_RECOGNITION);
-//                    if (matches != null && !matches.isEmpty()) {
-//                        String heardText = matches.get(0).toLowerCase().trim();
-//                        Toast.makeText(MainActivity.this,
-//                                "Heard: " + heardText, Toast.LENGTH_SHORT).show();
-//
-//                        if (heardText.equals(keyword)) {
-//                            runOnUiThread(() -> {
-//                                Toast.makeText(MainActivity.this,
-//                                        "Keyword Detected!", Toast.LENGTH_LONG).show();
-//                                micIcon.setColorFilter(ContextCompat.getColor(
-//                                        MainActivity.this, R.color.active_color));
-//                                statusText.setText("Keyword detected!");
-//                                showConfirmationDialog();
-//                            });
-//                        }
-//                    }
-//                    startListening();
-//                }
 
                 @Override
                 public void onPartialResults(Bundle partialResults) {
-                    // This will give real-time feedback
-                    ArrayList<String> partialMatches = partialResults.getStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION);
+                    ArrayList<String> partialMatches = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (partialMatches != null && !partialMatches.isEmpty()) {
                         String partialText = partialMatches.get(0).toLowerCase().trim();
-                        if (partialText.equals(keyword)) {
-                            runOnUiThread(() -> {
-                                Toast.makeText(MainActivity.this,
-                                        "Detecting keyword...", Toast.LENGTH_SHORT).show();
-                            });
+                        if (partialText.contains("take") || partialText.contains("photo")) {
+                            Toast.makeText(MainActivity.this, "Detecting keyword...", Toast.LENGTH_SHORT).show();
                         }
                     }
                 }
@@ -183,8 +147,7 @@ public class MainActivity extends AppCompatActivity {
 
             startListening();
         } else {
-            Toast.makeText(this, "Speech recognition not available on this device",
-                    Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Speech recognition not available on this device", Toast.LENGTH_LONG).show();
         }
     }
 
