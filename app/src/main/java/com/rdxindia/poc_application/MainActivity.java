@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.provider.MediaStore;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
@@ -59,6 +60,17 @@ public class MainActivity extends AppCompatActivity {
     private TextView statusText;
     private Button restartButton;
 
+    // Handler and Runnable for periodic execution
+    private Handler listeningHandler = new Handler();
+    private Runnable listeningRunnable = new Runnable() {
+        @Override
+        public void run() {
+            startListening();
+            // Schedule the next execution in 10 seconds (5,000 milliseconds)
+            listeningHandler.postDelayed(this, 5000);
+        }
+    };
+
     // Permissions launcher
     private final ActivityResultLauncher<String[]> requestPermissionsLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
@@ -94,6 +106,20 @@ public class MainActivity extends AppCompatActivity {
 
         // Check and request permissions
         checkAndRequestPermissions();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // Start the periodic execution when the activity starts
+        listeningHandler.post(listeningRunnable);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Remove callbacks when the activity is no longer visible to avoid leaks
+        listeningHandler.removeCallbacks(listeningRunnable);
     }
 
     private void checkAndRequestPermissions() {
