@@ -9,62 +9,29 @@
     android:background="#F0F0F0"
     tools:context=".MainActivity">
 
-    <!-- Camera preview -->
+    <!-- Optional Camera Preview -->
     <androidx.camera.view.PreviewView
         android:id="@+id/cameraPreview"
-        android:layout_width="200dp"
-        android:layout_height="300dp"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
         android:layout_margin="16dp"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@+id/micIcon"
+        app:layout_constraintBottom_toTopOf="@+id/statusText"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Microphone icon -->
-    <ImageView
-        android:id="@+id/micIcon"
-        android:layout_width="96dp"
-        android:layout_height="96dp"
-        android:src="@drawable/ic_mic_black_24dp"
-        app:tint="#666666"
-        app:layout_constraintTop_toBottomOf="@id/cameraPreview"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-    <!-- Status text -->
+    <!-- Status TextView -->
     <TextView
         android:id="@+id/statusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Listening..."
+        android:text="Status..."
         android:textColor="#333333"
         android:textSize="18sp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintTop_toBottomOf="@id/micIcon"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-    <!-- Gallery button -->
-    <Button
-        android:id="@+id/galleryButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Open Gallery"
-        android:layout_marginBottom="32dp"
+        android:layout_margin="16dp"
+        app:layout_constraintTop_toBottomOf="@id/cameraPreview"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
-
-    <TextView
-        android:id="@+id/instructionText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Say 'Take a photo' to activate"
-        app:layout_constraintTop_toBottomOf="@id/statusText"
-        android:textColor="#666666"
-        android:layout_marginBottom="16dp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -1,65 +1,79 @@
 package com.rdxindia.poc_application;
 
 import android.Manifest;
-import android.content.ContentValues;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.location.Location;
+import android.media.ExifInterface;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
-import android.os.Looper;
-import android.provider.MediaStore;
 import android.util.Log;
-import android.util.Size;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
-import androidx.annotation.OptIn;
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.camera.core.*;
+import androidx.camera.core.Camera;
+import androidx.camera.core.CameraControl;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageCapture;
+import androidx.camera.core.ImageCaptureException;
+import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationServices;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.mlkit.vision.common.InputImage;
-import com.google.mlkit.vision.objects.*;
-import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    private static final String TAG = "MainActivity";
 
     private PreviewView previewView;
     private TextView statusText;
     private ProcessCameraProvider cameraProvider;
     private ImageCapture imageCapture;
-    private ImageAnalysis imageAnalysis;
+    private Camera camera;
+    private ExecutorService cameraExecutor;
+    private FusedLocationProviderClient fusedLocationClient;
+    private Location lastKnownLocation;
 
-    private HashSet<Integer> detectedObjectIds = new HashSet<>();
-    private Timer resetTimer = new Timer();
-    private final ExecutorService imageExecutor = Executors.newSingleThreadExecutor();
-    private ExecutorService photoExecutor;
-
-    private final ActivityResultLauncher<String[]> requestPermissionsLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
-                    result -> {
-                        boolean allGranted = result.values().stream().allMatch(granted -> granted);
-                        if (allGranted) initializeCamera();
-                        else Toast.makeText(this, "Permissions required!", Toast.LENGTH_LONG).show();
-                    });
+    // Receiver for voice commands
+    private final BroadcastReceiver voiceCommandReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("VOICE_COMMAND".equals(intent.getAction())) {
+                String command = intent.getStringExtra("command");
+                if (command != null) {
+                    Log.d("MainActivity", "Voice command received: " + command);
+                    onVoiceCommand(command);
+                }
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,145 +83,262 @@ public class MainActivity extends AppCompatActivity {
         previewView = findViewById(R.id.cameraPreview);
         statusText = findViewById(R.id.statusText);
 
-        checkAndRequestPermissions();
-
-        // Schedule reset of detected objects every 10 seconds
-        resetTimer.schedule(new TimerTask() {
-            @Override
-            public void run() {
-                detectedObjectIds.clear();
-            }
-        }, 0, 10000);
-
-        photoExecutor = Executors.newSingleThreadExecutor();
+        // Initialize the camera
+        cameraExecutor = Executors.newSingleThreadExecutor();
+        // Start Speech Recognition Service
+        Intent speechServiceIntent = new Intent(this, SpeechRecognitionService.class);
+        startService(speechServiceIntent);
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        fetchLocation();
+        requestPermissions();
+    }
+    // Add location fetch method
+    private void fetchLocation() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            fusedLocationClient.getLastLocation()
+                    .addOnSuccessListener(this, location -> {
+                        if (location != null) {
+                            lastKnownLocation = location;
+                        }
+                    });
+        }
     }
 
-    private void checkAndRequestPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissionsLauncher.launch(new String[]{Manifest.permission.CAMERA});
-        } else {
+    // Update onResume() for proper receiver registration
+    @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
+    @Override
+    protected void onResume() {
+        super.onResume();
+        IntentFilter filter = new IntentFilter("VOICE_COMMAND");
+        registerReceiver(voiceCommandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+
+        if (cameraProvider == null) {
             initializeCamera();
         }
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        unregisterReceiver(voiceCommandReceiver);
+    }
+
+    // Request necessary permissions
+    private void requestPermissions() {
+        String[] permissions = { Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.ACCESS_FINE_LOCATION };
+
+        ActivityResultLauncher<String[]> requestPermissionsLauncher =
+                registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
+                        result -> {
+                            boolean allGranted = true;
+                            for (Boolean granted : result.values()) {
+                                if (!granted) {
+                                    allGranted = false;
+                                    break;
+                                }
+                            }
+                            if (!allGranted) {
+                                Toast.makeText(this, "Permissions required!", Toast.LENGTH_LONG).show();
+                            } else {
+                                initializeCamera();
+                            }
+                        });
+        requestPermissionsLauncher.launch(permissions);
+    }
+
+    // Initialize the CameraProvider
     private void initializeCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(() -> {
             try {
                 cameraProvider = cameraProviderFuture.get();
-                bindCameraUseCases();
-            } catch (ExecutionException | InterruptedException e) {
-                Log.e(TAG, "Camera initialization failed", e);
+
+                CameraSelector cameraSelector = new CameraSelector.Builder()
+                        .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                        .build();
+
+                Preview preview = new Preview.Builder().build();
+                preview.setSurfaceProvider(previewView.getSurfaceProvider());
+
+                imageCapture = new ImageCapture.Builder().build();
+
+                cameraProvider.unbindAll();
+                camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture);
+
+                Log.d("MainActivity", "Camera initialized successfully.");
+            } catch (Exception e) {
+                Log.e("MainActivity", "Camera initialization failed", e);
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void bindCameraUseCases() {
-        CameraSelector cameraSelector = new CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                .build();
+    // Handle voice command
+    private void onVoiceCommand(String command) {
+        Log.d("MainActivity", "Processing voice command: " + command);
+        boolean containsPhotoCommand = command.contains("take a photo") || command.contains("zoom");
+        boolean zoomCommand = command.contains("zoom");
 
-        Preview preview = new Preview.Builder().build();
-        preview.setSurfaceProvider(previewView.getSurfaceProvider());
+        if (zoomCommand) {
+            // Set zoom first
+            setZoom(0.5f);
+            updateStatusText("Zooming and capturing...");
 
-        imageCapture = new ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetResolution(new Size(1920, 1080))
-                .build();
-
-        imageAnalysis = new ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build();
-        imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), this::processImage);
-
-        cameraProvider.unbindAll();
-        cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture, imageAnalysis);
+            // Capture after 500ms delay to ensure zoom applied
+            new Handler().postDelayed(() -> {
+                takePhoto(true); // true = reset zoom after capture
+            }, 500);
+        }
+        else if (containsPhotoCommand) {
+            takePhoto(false); // Normal capture without zoom
+        }
+        else {
+            updateStatusText("Unrecognized command: " + command);
+        }
     }
 
-    @OptIn(markerClass = ExperimentalGetImage.class)
-    private void processImage(ImageProxy imageProxy) {
-        imageExecutor.execute(() -> {
-            InputImage image = InputImage.fromMediaImage(imageProxy.getImage(), imageProxy.getImageInfo().getRotationDegrees());
-
-            ObjectDetectorOptions options = new ObjectDetectorOptions.Builder()
-                    .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
-                    .enableMultipleObjects()
-                    .enableClassification()
-                    .build();
-
-            ObjectDetector objectDetector = ObjectDetection.getClient(options);
-
-            objectDetector.process(image)
-                    .addOnSuccessListener(detectedObjects -> {
-                        for (DetectedObject obj : detectedObjects) {
-                            if (obj.getTrackingId() != null && !detectedObjectIds.contains(obj.getTrackingId())) {
-                                detectedObjectIds.add(obj.getTrackingId());
-                                runOnUiThread(() -> statusText.setText("New object detected! Capturing..."));
-                                takePhoto();
-                                resetDetectedObjects();
-                            }
-                        }
-                    })
-                    .addOnFailureListener(e -> Log.e(TAG, "Object detection failed", e))
-                    .addOnCompleteListener(task -> imageProxy.close());
-        });
+    private void setZoom(float zoomLevel) {
+        if (camera == null) {
+            Log.e("MainActivity", "Camera not initialized, cannot set zoom.");
+            updateStatusText("Camera not ready for zoom");
+            return;
+        }
+        try {
+            CameraControl control = camera.getCameraControl();
+            control.setLinearZoom(zoomLevel); // Use parameter instead of hardcoded 0.5
+            updateStatusText("Zoom set to " + (zoomLevel * 100) + "%");
+        } catch (Exception e) {
+            Log.e("MainActivity", "Error setting zoom", e);
+            updateStatusText("Zoom failed");
+        }
     }
 
-    private void resetDetectedObjects() {
-        new Handler(Looper.getMainLooper()).postDelayed(detectedObjectIds::clear, 5000);
-    }
-
-    private void takePhoto() {
+    private void takePhoto(boolean resetZoom) {
         if (imageCapture == null) {
-            Log.e(TAG, "ImageCapture is null. Cannot take a photo.");
+            Log.e("MainActivity", "ImageCapture is null");
+            updateStatusText("Camera not ready");
             return;
         }
 
-        photoExecutor.execute(() -> {
-            ContentValues contentValues = new ContentValues();
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-            contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, "IMG_" + timeStamp);
-            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg");
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                .format(new Date());
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES);
+        // Create filename with location
+        String locationString = "";
+        if (lastKnownLocation != null) {
+            locationString = String.format(Locale.US,
+                    "_%.5f_%.5f",
+                    lastKnownLocation.getLatitude(),
+                    lastKnownLocation.getLongitude());
+        }
+
+        File picturesDir = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES);
+        File appDir = new File(picturesDir, "POC_App");
+        if (!appDir.exists()) appDir.mkdirs();
+
+        final File file = new File(appDir,
+                "IMG_" + timeStamp + locationString + ".jpg");
+
+        ImageCapture.OutputFileOptions outputOptions =
+                new ImageCapture.OutputFileOptions.Builder(file).build();
+
+        imageCapture.takePicture(outputOptions, cameraExecutor,
+                new ImageCapture.OnImageSavedCallback() {
+                    @Override
+                    public void onImageSaved(@NonNull ImageCapture.OutputFileResults results) {
+                        try {
+                            // EXIF metadata handling
+                            if (lastKnownLocation != null) {
+                                ExifInterface exif = new ExifInterface(file.getAbsolutePath());
+                                setExifLocation(exif, lastKnownLocation);
+                                exif.saveAttributes();
+                            }
+
+                            // Overlay text on image
+                            overlayCoordinatesOnImage(file);
+                        } catch (IOException e) {
+                            Log.e("PhotoSave", "Error processing image", e);
+                        }
+
+                        runOnUiThread(() -> {
+                            String msg = "Photo saved: " + file.getName();
+                            Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
+                            updateStatusText("Photo saved!");
+                        });
+
+                        // Reset zoom if requested
+                        if (resetZoom) setZoom(0.0f);
+                    }
+
+                    @Override
+                    public void onError(@NonNull ImageCaptureException e) {
+                        Log.e("MainActivity", "Capture failed: " + e.getMessage());
+                        updateStatusText("Error taking photo");
+                    }
+                });
+
+        updateStatusText("Capturing...");
+    }
+
+    // Helper methods
+    private void setExifLocation(ExifInterface exif, Location location) throws IOException {
+        double lat = location.getLatitude();
+        double lon = location.getLongitude();
+
+        exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE, convertToDMS(lat));
+        exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF, lat >= 0 ? "N" : "S");
+        exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE, convertToDMS(lon));
+        exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF, lon >= 0 ? "E" : "W");
+    }
+
+    private String convertToDMS(double coordinate) {
+        coordinate = Math.abs(coordinate);
+        int degrees = (int) coordinate;
+        double minutes = (coordinate - degrees) * 60;
+        int seconds = (int) ((minutes - (int) minutes) * 60);
+        return degrees + "/1," + (int) minutes + "/1," + seconds + "/1";
+    }
+
+    private void overlayCoordinatesOnImage(File imageFile) {
+        if (lastKnownLocation == null) return;
+
+        try {
+            String text = String.format(Locale.US,
+                    "Lat: %.5f\nLon: %.5f\n%s",
+                    lastKnownLocation.getLatitude(),
+                    lastKnownLocation.getLongitude(),
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                            .format(new Date()));
+
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inMutable = true;
+            Bitmap bitmap = BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+
+            Canvas canvas = new Canvas(bitmap);
+            Paint paint = new Paint();
+            paint.setColor(Color.WHITE);
+            paint.setTextSize(48);
+            paint.setAntiAlias(true);
+            paint.setShadowLayer(5f, 2f, 2f, Color.BLACK);
+
+            // Position text at bottom-left
+            Rect bounds = new Rect();
+            paint.getTextBounds(text, 0, text.length(), bounds);
+            float x = 20;
+            float y = bitmap.getHeight() - 20;
+
+            canvas.drawText(text, x, y, paint);
+
+            try (FileOutputStream out = new FileOutputStream(imageFile)) {
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out);
             }
-
-            ImageCapture.OutputFileOptions outputOptions = new ImageCapture.OutputFileOptions.Builder(
-                    getContentResolver(),
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    contentValues)
-                    .build();
-
-            imageCapture.takePicture(outputOptions, photoExecutor,
-                    new ImageCapture.OnImageSavedCallback() {
-                        @Override
-                        public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
-                            runOnUiThread(() -> statusText.setText("Photo captured!"));
-                        }
-
-                        @Override
-                        public void onError(@NonNull ImageCaptureException exception) {
-                            Log.e(TAG, "Capture failed: " + exception.getMessage());
-                        }
-                    });
-        });
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (cameraProvider != null) {
-            bindCameraUseCases();
+        } catch (IOException e) {
+            Log.e("Overlay", "Text overlay failed", e);
         }
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        resetTimer.cancel();
-        if (photoExecutor != null && !photoExecutor.isShutdown()) {
-            photoExecutor.shutdown();
-        }
+    private void updateStatusText(String text) {
+        runOnUiThread(() -> statusText.setText(text));
     }
 }
